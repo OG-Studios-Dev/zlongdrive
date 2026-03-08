@@ -2,6 +2,7 @@ import React from 'react'
 import { BrowserRouter as Router, Routes, Route } from 'react-router-dom'
 import Navbar from './components/Navbar'
 import Footer from './components/Footer'
+import PageTransition from './components/PageTransition'
 import Home from './pages/Home'
 import Leaderboard from './pages/Leaderboard'
 import Standings from './pages/Standings'
@@ -11,6 +12,7 @@ import Bracket from './pages/Bracket'
 function App() {
     return (
         <Router>
+            <PageTransition />
             <div className="min-h-screen flex flex-col relative z-10 selection:bg-primary/30 selection:text-white">
                 <Navbar />
                 <main className="flex-1 w-full">
