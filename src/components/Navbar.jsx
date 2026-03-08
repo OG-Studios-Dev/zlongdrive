@@ -46,8 +46,8 @@ export default function Navbar() {
                             {link.name}
                         </Link>
                     ))}
-                    <Link to="/contact" className="magnetic-btn bg-primary text-black px-6 py-2 rounded-none text-xl font-sans font-bold uppercase tracking-wider shadow-[0_0_15px_rgba(57,255,20,0.4)] hover:shadow-[0_0_25px_rgba(57,255,20,0.7)] transition-shadow">
-                        Competitor Login
+                    <Link to="/admin" className="magnetic-btn bg-primary text-black px-6 py-2 rounded-none text-xl font-sans font-bold uppercase tracking-wider shadow-[0_0_15px_rgba(57,255,20,0.4)] hover:shadow-[0_0_25px_rgba(57,255,20,0.7)] transition-shadow">
+                        Admin Console
                     </Link>
                 </div>
 
@@ -73,8 +73,8 @@ export default function Navbar() {
                             {link.name}
                         </Link>
                     ))}
-                    <Link to="/contact" className="bg-primary text-white px-6 py-3 rounded-xl text-center font-bold mt-2">
-                        Contact
+                    <Link to="/admin" onClick={() => setMobileMenuOpen(false)} className="bg-primary text-white px-6 py-3 rounded-xl text-center font-bold mt-2">
+                        Admin Console
                     </Link>
                 </div>
             )}

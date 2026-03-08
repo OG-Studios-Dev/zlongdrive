@@ -1,223 +1,954 @@
-import React, { useState } from 'react'
+import React, { useEffect, useState } from 'react'
+import {
+    Calendar,
+    Copy,
+    CreditCard,
+    Flag,
+    Plus,
+    Save,
+    Trophy,
+    Users,
+} from 'lucide-react'
+import {
+    COUNTRY_OPTIONS,
+    DEFAULT_DIVISIONS,
+    DEFAULT_POINTS_TABLE,
+    formatCompetitionDate,
+    getCompetitionDivisions,
+    getCompetitionMediaPosts,
+    getSeasonLeaderboard,
+    rankCompetitionEntrants,
+} from '../lib/competition'
 import { useStore } from '../store/useStore'
-import { Check, Edit2, Play, ChevronRight, X } from 'lucide-react'
+
+const inputClass = 'bg-background border-2 border-surface px-4 py-3 text-base font-sans uppercase tracking-wide outline-none focus:border-primary transition-colors text-white'
+const textareaClass = `${inputClass} min-h-[140px] normal-case tracking-normal`
+const selectClass = `${inputClass} cursor-pointer`
+const panelClass = 'bg-slate-950 border-[3px] border-surface shadow-2xl relative overflow-hidden'
+
+const createSeasonDraft = () => ({
+    name: '',
+    startDate: '',
+    endDate: '',
+    status: 'PLANNED',
+    pointsTable: { ...DEFAULT_POINTS_TABLE },
+})
+
+const createCompetitionDraft = () => ({
+    name: '',
+    venue: '',
+    countryCode: 'CA',
+    startDate: '',
+    status: 'DRAFT',
+    signupLink: '',
+    paymentLink: '',
+    rules: {
+        qualifyingSets: 3,
+        shotsPerSet: 6,
+        divisions: DEFAULT_DIVISIONS.map((division) => ({ ...division })),
+    },
+})
+
+const createEntrantDraft = () => ({
+    name: '',
+    email: '',
+    countryCode: 'CA',
+    pool: 'A',
+    paid: false,
+    notes: '',
+})
+
+const tabs = [
+    'seasons',
+    'competitions',
+    'signups',
+    'scoring',
+    'brackets',
+    'media',
+]
 
 export default function AdminConsole() {
-    const { eventConfig, hitters, updateHitterSet } = useStore()
-    const [selectedHitterId, setSelectedHitterId] = useState(hitters[0]?.id || null)
-    const [activeTab, setActiveTab] = useState('scoring') // scoring, bracket, settings
+    const seasons = useStore((state) => state.seasons)
+    const competitions = useStore((state) => state.competitions)
+    const currentSeasonId = useStore((state) => state.currentSeasonId)
+    const activeCompetitionId = useStore((state) => state.activeCompetitionId)
+    const setCurrentSeason = useStore((state) => state.setCurrentSeason)
+    const setActiveCompetition = useStore((state) => state.setActiveCompetition)
+    const addSeason = useStore((state) => state.addSeason)
+    const updateSeason = useStore((state) => state.updateSeason)
+    const addCompetition = useStore((state) => state.addCompetition)
+    const updateCompetition = useStore((state) => state.updateCompetition)
+    const addEntrant = useStore((state) => state.addEntrant)
+    const updateEntrantShot = useStore((state) => state.updateEntrantShot)
+    const setEntrantPaymentStatus = useStore((state) => state.setEntrantPaymentStatus)
+    const setBracketWinner = useStore((state) => state.setBracketWinner)
 
-    const selectedHitter = hitters.find(h => h.id === selectedHitterId)
+    const [activeTab, setActiveTab] = useState('seasons')
+    const [seasonDraft, setSeasonDraft] = useState(createSeasonDraft())
+    const [competitionDraft, setCompetitionDraft] = useState(createCompetitionDraft())
+    const [entrantDraft, setEntrantDraft] = useState(createEntrantDraft())
+    const [seasonSettings, setSeasonSettings] = useState(null)
+    const [competitionSettings, setCompetitionSettings] = useState(null)
+    const [selectedEntrantId, setSelectedEntrantId] = useState(null)
+    const [copiedPostId, setCopiedPostId] = useState(null)
 
-    // Local state for the current edit
-    const [ballInputs, setBallInputs] = useState(['', '', '', '', '', ''])
-    const [summaryInput, setSummaryInput] = useState('')
-    const [inputMode, setInputMode] = useState('summary') // 'summary' or 'balls'
+    useEffect(() => {
+        window.scrollTo(0, 0)
+    }, [])
 
-    const handleSaveSet = (setId) => {
-        let finalLong = 0
-        if (inputMode === 'summary') {
-            finalLong = parseInt(summaryInput) || 0
-        } else {
-            const validBalls = ballInputs.map(v => parseInt(v) || 0)
-            finalLong = Math.max(...validBalls, 0)
+    const currentSeason = seasons.find((season) => season.id === currentSeasonId) || seasons[0] || null
+    const seasonCompetitions = competitions.filter((competition) => competition.seasonId === currentSeason?.id)
+    const activeCompetition =
+        seasonCompetitions.find((competition) => competition.id === activeCompetitionId)
+        || seasonCompetitions[0]
+        || null
+
+    useEffect(() => {
+        if (seasonCompetitions.length === 0) {
+            return
         }
 
-        updateHitterSet(selectedHitterId, setId, finalLong)
+        if (!seasonCompetitions.some((competition) => competition.id === activeCompetitionId)) {
+            setActiveCompetition(seasonCompetitions[0].id)
+        }
+    }, [seasonCompetitions, activeCompetitionId, setActiveCompetition])
 
-        // Reset inputs
-        setBallInputs(['', '', '', '', '', ''])
-        setSummaryInput('')
+    useEffect(() => {
+        if (currentSeason) {
+            setSeasonSettings({
+                ...currentSeason,
+                pointsTable: { ...currentSeason.pointsTable },
+            })
+        }
+    }, [currentSeason])
+
+    useEffect(() => {
+        if (activeCompetition) {
+            setCompetitionSettings({
+                ...activeCompetition,
+                rules: {
+                    ...activeCompetition.rules,
+                    divisions: activeCompetition.rules.divisions.map((division) => ({ ...division })),
+                },
+            })
+        }
+    }, [activeCompetition])
+
+    const rankedEntrants = rankCompetitionEntrants(activeCompetition?.entrants || [])
+    const divisions = activeCompetition ? getCompetitionDivisions(activeCompetition) : []
+    const mediaPosts = activeCompetition ? getCompetitionMediaPosts(activeCompetition) : []
+    const seasonLeaderboard = currentSeason ? getSeasonLeaderboard(currentSeason, competitions) : []
+    const paidEntrants = rankedEntrants.filter((entrant) => entrant.paid).length
+    const pendingEntrants = rankedEntrants.length - paidEntrants
+
+    useEffect(() => {
+        if (rankedEntrants.length === 0) {
+            setSelectedEntrantId(null)
+            return
+        }
+
+        if (!rankedEntrants.some((entrant) => entrant.id === selectedEntrantId)) {
+            setSelectedEntrantId(rankedEntrants[0].id)
+        }
+    }, [rankedEntrants, selectedEntrantId])
+
+    const selectedEntrant = rankedEntrants.find((entrant) => entrant.id === selectedEntrantId) || null
+    const divisionLookup = {}
+
+    divisions.forEach((division) => {
+        division.entrants.forEach((entrant) => {
+            divisionLookup[entrant.id] = division.name
+        })
+    })
+
+    const handleSeasonPointsChange = (finish, value) => {
+        setSeasonSettings((current) => ({
+            ...current,
+            pointsTable: {
+                ...current.pointsTable,
+                [finish]: Number(value) || 0,
+            },
+        }))
     }
 
-    const handleBallChange = (index, val) => {
-        const newInputs = [...ballInputs]
-        newInputs[index] = val
-        setBallInputs(newInputs)
+    const handleCompetitionRuleChange = (field, value) => {
+        setCompetitionSettings((current) => ({
+            ...current,
+            rules: {
+                ...current.rules,
+                [field]: Number(value) || 0,
+            },
+        }))
+    }
+
+    const handleDivisionSizeChange = (index, value) => {
+        setCompetitionSettings((current) => ({
+            ...current,
+            rules: {
+                ...current.rules,
+                divisions: current.rules.divisions.map((division, divisionIndex) =>
+                    divisionIndex === index
+                        ? { ...division, size: Number(value) || 0 }
+                        : division,
+                ),
+            },
+        }))
+    }
+
+    const handleCreateSeason = () => {
+        addSeason(seasonDraft)
+        setSeasonDraft(createSeasonDraft())
+    }
+
+    const handleCreateCompetition = () => {
+        if (!currentSeason) {
+            return
+        }
+
+        addCompetition(currentSeason.id, competitionDraft)
+        setCompetitionDraft(createCompetitionDraft())
+    }
+
+    const handleAddEntrant = () => {
+        if (!activeCompetition) {
+            return
+        }
+
+        addEntrant(activeCompetition.id, entrantDraft)
+        setEntrantDraft(createEntrantDraft())
+    }
+
+    const handleCopyCaption = async (post) => {
+        if (!navigator?.clipboard) {
+            return
+        }
+
+        await navigator.clipboard.writeText(post.caption)
+        setCopiedPostId(post.id)
+        window.setTimeout(() => setCopiedPostId(null), 1600)
     }
 
     return (
-        <div className="min-h-screen pt-28 pb-10 px-4 md:px-8 max-w-[1400px] mx-auto flex flex-col h-screen">
+        <div className="min-h-screen pt-28 pb-10 px-4 md:px-8 max-w-[1500px] mx-auto">
+            <div className={`${panelClass} p-6 mb-6`}>
+                <div className="absolute top-0 right-0 w-[360px] h-[360px] bg-primary/10 blur-[120px] pointer-events-none"></div>
+                <div className="relative z-10 flex flex-col gap-6">
+                    <div className="flex flex-col xl:flex-row xl:items-end xl:justify-between gap-6">
+                        <div>
+                            <p className="font-mono text-xs uppercase tracking-[0.3em] text-primary mb-3">Owner Console</p>
+                            <h1 className="font-sans text-5xl md:text-7xl font-bold uppercase tracking-tight text-white">
+                                Seasons, competitions, payments, brackets.
+                            </h1>
+                        </div>
 
-            {/* Top Protocol Bar */}
-            <div className="w-full bg-surface border-2 border-surface rounded-none p-4 flex flex-wrap items-center justify-between gap-4 mb-6 shadow-xl shrink-0">
-                <div className="flex items-center gap-4">
-                    <div className="flex items-center gap-2">
-                        <div className="w-2.5 h-2.5 bg-red-500 rounded-full animate-pulse shadow-[0_0_10px_rgba(239,68,68,0.8)]"></div>
-                        <span className="font-sans text-lg text-red-500 tracking-widest uppercase font-bold">{eventConfig.status}</span>
+                        <div className="grid grid-cols-1 md:grid-cols-2 gap-4 xl:min-w-[540px]">
+                            <label className="flex flex-col gap-2">
+                                <span className="font-mono text-xs uppercase tracking-[0.3em] text-white/40">Season</span>
+                                <select
+                                    value={currentSeason?.id || ''}
+                                    onChange={(event) => setCurrentSeason(event.target.value)}
+                                    className={selectClass}
+                                >
+                                    {seasons.map((season) => (
+                                        <option key={season.id} value={season.id}>
+                                            {season.name}
+                                        </option>
+                                    ))}
+                                </select>
+                            </label>
+
+                            <label className="flex flex-col gap-2">
+                                <span className="font-mono text-xs uppercase tracking-[0.3em] text-white/40">Competition</span>
+                                <select
+                                    value={activeCompetition?.id || ''}
+                                    onChange={(event) => setActiveCompetition(event.target.value)}
+                                    className={selectClass}
+                                >
+                                    {seasonCompetitions.map((competition) => (
+                                        <option key={competition.id} value={competition.id}>
+                                            {competition.name}
+                                        </option>
+                                    ))}
+                                </select>
+                            </label>
+                        </div>
                     </div>
-                    <div className="h-6 w-[2px] bg-white/10"></div>
-                    <h2 className="font-sans font-bold text-2xl uppercase tracking-wider">{eventConfig.name}</h2>
-                    <span className="px-3 py-1 bg-surface border border-white/10 rounded-none text-sm font-mono text-text/50">{eventConfig.format}</span>
-                </div>
 
-                <div className="flex bg-background border-2 border-surface p-1">
-                    {['scoring', 'bracket', 'settings'].map(tab => (
-                        <button
-                            key={tab}
-                            onClick={() => setActiveTab(tab)}
-                            className={`px-6 py-2 text-lg font-sans font-bold uppercase tracking-wider transition-colors
-                 ${activeTab === tab ? 'bg-primary text-black' : 'text-white/50 hover:text-white hover:bg-white/5'}`}
-                        >
-                            {tab}
-                        </button>
-                    ))}
+                    <div className="flex flex-wrap gap-3">
+                        {tabs.map((tab) => (
+                            <button
+                                key={tab}
+                                onClick={() => setActiveTab(tab)}
+                                className={`px-5 py-3 font-sans font-bold uppercase tracking-[0.2em] transition-colors ${
+                                    activeTab === tab
+                                        ? 'bg-primary text-black'
+                                        : 'bg-background text-white/60 hover:text-white hover:bg-white/5'
+                                }`}
+                            >
+                                {tab}
+                            </button>
+                        ))}
+                    </div>
                 </div>
             </div>
 
-            {activeTab === 'scoring' && (
-                <div className="flex flex-col lg:flex-row gap-6 flex-1 min-h-0 overflow-hidden">
-
-                    {/* Competitor List Sidebar */}
-                    <div className="w-full lg:w-96 flex flex-col bg-slate-950 border-[3px] border-surface overflow-hidden shrink-0">
-                        <div className="p-4 border-b-2 border-surface bg-surface">
-                            <h3 className="font-sans font-bold text-xl text-primary uppercase tracking-widest mb-3">Target Field</h3>
-                            <input
-                                type="text"
-                                placeholder="Search hitters..."
-                                className="w-full bg-background border-2 border-surface px-4 py-3 text-lg font-sans uppercase tracking-wider outline-none focus:border-primary transition-colors text-white placeholder:text-white/30"
-                            />
+            {activeTab === 'seasons' && currentSeason && seasonSettings && (
+                <div className="grid grid-cols-1 xl:grid-cols-[minmax(0,1fr)_420px] gap-6">
+                    <section className={`${panelClass} p-6`}>
+                        <div className="flex items-center gap-3 mb-6">
+                            <Trophy className="text-primary" />
+                            <h2 className="font-sans text-3xl font-bold uppercase">Season settings</h2>
                         </div>
 
-                        <div className="flex-1 overflow-y-auto p-2">
-                            {hitters.map(hitter => {
-                                const bestDistance = Math.max(...hitter.sets.map(s => s.long))
-                                return (
-                                    <button
-                                        key={hitter.id}
-                                        onClick={() => setSelectedHitterId(hitter.id)}
-                                        className={`w-full text-left p-4 mb-2 transition-all flex items-center justify-between group border-2
-                  ${selectedHitterId === hitter.id ? 'bg-primary/10 border-primary' : 'bg-surface border-transparent hover:border-white/20'}`}
-                                    >
+                        <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+                            <label className="flex flex-col gap-2">
+                                <span className="font-mono text-xs uppercase tracking-[0.3em] text-white/40">Season name</span>
+                                <input
+                                    value={seasonSettings.name}
+                                    onChange={(event) => setSeasonSettings((current) => ({ ...current, name: event.target.value }))}
+                                    className={inputClass}
+                                />
+                            </label>
+                            <label className="flex flex-col gap-2">
+                                <span className="font-mono text-xs uppercase tracking-[0.3em] text-white/40">Status</span>
+                                <select
+                                    value={seasonSettings.status}
+                                    onChange={(event) => setSeasonSettings((current) => ({ ...current, status: event.target.value }))}
+                                    className={selectClass}
+                                >
+                                    <option value="PLANNED">Planned</option>
+                                    <option value="LIVE">Live</option>
+                                    <option value="ARCHIVED">Archived</option>
+                                </select>
+                            </label>
+                            <label className="flex flex-col gap-2">
+                                <span className="font-mono text-xs uppercase tracking-[0.3em] text-white/40">Start date</span>
+                                <input
+                                    type="date"
+                                    value={seasonSettings.startDate}
+                                    onChange={(event) => setSeasonSettings((current) => ({ ...current, startDate: event.target.value }))}
+                                    className={inputClass}
+                                />
+                            </label>
+                            <label className="flex flex-col gap-2">
+                                <span className="font-mono text-xs uppercase tracking-[0.3em] text-white/40">End date</span>
+                                <input
+                                    type="date"
+                                    value={seasonSettings.endDate}
+                                    onChange={(event) => setSeasonSettings((current) => ({ ...current, endDate: event.target.value }))}
+                                    className={inputClass}
+                                />
+                            </label>
+                        </div>
+
+                        <div className="grid grid-cols-2 lg:grid-cols-5 gap-4 mt-6">
+                            {Object.entries(seasonSettings.pointsTable).map(([finish, points]) => (
+                                <label key={finish} className="flex flex-col gap-2">
+                                    <span className="font-mono text-xs uppercase tracking-[0.3em] text-white/40">{finish}</span>
+                                    <input
+                                        type="number"
+                                        min="0"
+                                        value={points}
+                                        onChange={(event) => handleSeasonPointsChange(finish, event.target.value)}
+                                        className={inputClass}
+                                    />
+                                </label>
+                            ))}
+                        </div>
+
+                        <div className="mt-6 flex gap-4">
+                            <button
+                                onClick={() => updateSeason(currentSeason.id, seasonSettings)}
+                                className="bg-primary text-black hover:bg-white px-6 py-4 font-sans font-bold uppercase tracking-wider flex items-center gap-3 transition-colors"
+                            >
+                                <Save size={18} strokeWidth={3} /> Save season
+                            </button>
+                        </div>
+
+                        <div className="mt-8 border-t border-white/10 pt-6">
+                            <p className="font-mono text-xs uppercase tracking-[0.3em] text-primary mb-4">Current season leaderboard</p>
+                            <div className="space-y-3">
+                                {seasonLeaderboard.map((row) => (
+                                    <div key={row.playerId} className="bg-background border border-white/10 p-4 flex items-center justify-between">
                                         <div>
-                                            <p className={`font-sans font-bold text-2xl tracking-wide uppercase ${selectedHitterId === hitter.id ? 'text-primary drop-shadow-[0_0_5px_rgba(57,255,20,0.5)]' : 'text-white group-hover:text-primary'}`}>{hitter.name}</p>
-                                            <p className={`text-sm font-mono mt-1 ${selectedHitterId === hitter.id ? 'text-primary/70' : 'text-white/40'}`}>GRP {hitter.group} • {hitter.division}</p>
+                                            <p className="font-sans text-xl font-bold uppercase text-white">
+                                                #{row.rank} {row.flagEmoji} {row.name}
+                                            </p>
+                                            <p className="font-mono text-xs uppercase tracking-[0.3em] text-white/40 mt-2">
+                                                {row.eventsPlayed} events • {row.wins} wins
+                                            </p>
                                         </div>
-                                        <div className={`font-sans font-bold text-4xl ${selectedHitterId === hitter.id ? 'text-primary drop-shadow-[0_0_8px_rgba(57,255,20,0.5)]' : 'text-white/30 group-hover:text-white/60'}`}>
-                                            {bestDistance > 0 ? bestDistance : '-'}
-                                        </div>
-                                    </button>
-                                )
-                            })}
-                        </div>
-                    </div>
-
-                    {/* Main Scoring Desk */}
-                    {selectedHitter ? (
-                        <div className="flex-1 flex flex-col bg-slate-950 border-[3px] border-surface overflow-hidden shadow-2xl relative">
-                            <div className="absolute top-0 right-0 w-[400px] h-[400px] bg-primary/5 blur-[100px] pointer-events-none"></div>
-
-                            {/* Hitter Header */}
-                            <div className="p-8 border-b-2 border-surface flex justify-between items-end bg-surface relative z-10">
-                                <div>
-                                    <span className="font-sans font-bold tracking-widest text-primary text-xl uppercase block mb-1">Active Competitor</span>
-                                    <h2 className="text-6xl md:text-7xl font-sans font-bold uppercase tracking-tight text-white drop-shadow-md">{selectedHitter.name}</h2>
-                                </div>
-                                <div className="text-right">
-                                    <span className="font-sans font-bold tracking-widest text-white/50 text-xl uppercase block mb-1">Current LONG</span>
-                                    <div className="text-7xl font-sans font-bold text-primary drop-shadow-[0_0_10px_rgba(57,255,20,0.5)]">
-                                        {Math.max(...selectedHitter.sets.map(s => s.long), 0) || '-'}
+                                        <p className="font-sans text-3xl font-bold text-primary">{row.points}</p>
                                     </div>
-                                </div>
+                                ))}
                             </div>
+                        </div>
+                    </section>
 
-                            {/* Sets Area */}
-                            <div className="p-8 flex-1 overflow-y-auto relative z-10">
-                                <div className="flex justify-between items-end mb-8">
-                                    <h3 className="font-sans font-bold text-4xl uppercase tracking-wide">Qualifying Sets</h3>
-                                    <div className="flex bg-background border-2 border-surface p-1">
-                                        <button onClick={() => setInputMode('summary')} className={`px-6 py-2 text-lg font-sans font-bold uppercase ${inputMode === 'summary' ? 'bg-white text-black' : 'text-white/50 hover:text-white bg-transparent'}`}>Summary</button>
-                                        <button onClick={() => setInputMode('balls')} className={`px-6 py-2 text-lg font-sans font-bold uppercase ${inputMode === 'balls' ? 'bg-white text-black' : 'text-white/50 hover:text-white bg-transparent'}`}>6 Balls</button>
-                                    </div>
+                    <aside className={`${panelClass} p-6`}>
+                        <div className="flex items-center gap-3 mb-6">
+                            <Plus className="text-primary" />
+                            <h2 className="font-sans text-3xl font-bold uppercase">New season</h2>
+                        </div>
+
+                        <div className="space-y-4">
+                            <label className="flex flex-col gap-2">
+                                <span className="font-mono text-xs uppercase tracking-[0.3em] text-white/40">Name</span>
+                                <input
+                                    value={seasonDraft.name}
+                                    onChange={(event) => setSeasonDraft((current) => ({ ...current, name: event.target.value }))}
+                                    className={inputClass}
+                                />
+                            </label>
+                            <label className="flex flex-col gap-2">
+                                <span className="font-mono text-xs uppercase tracking-[0.3em] text-white/40">Start date</span>
+                                <input
+                                    type="date"
+                                    value={seasonDraft.startDate}
+                                    onChange={(event) => setSeasonDraft((current) => ({ ...current, startDate: event.target.value }))}
+                                    className={inputClass}
+                                />
+                            </label>
+                            <label className="flex flex-col gap-2">
+                                <span className="font-mono text-xs uppercase tracking-[0.3em] text-white/40">End date</span>
+                                <input
+                                    type="date"
+                                    value={seasonDraft.endDate}
+                                    onChange={(event) => setSeasonDraft((current) => ({ ...current, endDate: event.target.value }))}
+                                    className={inputClass}
+                                />
+                            </label>
+                            <button
+                                onClick={handleCreateSeason}
+                                className="w-full bg-primary text-black hover:bg-white px-6 py-4 font-sans font-bold uppercase tracking-wider flex items-center justify-center gap-3 transition-colors"
+                            >
+                                <Plus size={18} strokeWidth={3} /> Create season
+                            </button>
+                        </div>
+                    </aside>
+                </div>
+            )}
+
+            {activeTab === 'competitions' && currentSeason && (
+                <div className="grid grid-cols-1 xl:grid-cols-[minmax(0,1fr)_420px] gap-6">
+                    <section className={`${panelClass} p-6`}>
+                        {competitionSettings && (
+                            <>
+                                <div className="flex items-center gap-3 mb-6">
+                                    <Calendar className="text-primary" />
+                                    <h2 className="font-sans text-3xl font-bold uppercase">Competition builder</h2>
                                 </div>
 
-                                <div className="grid grid-cols-1 gap-4">
-                                    {selectedHitter.sets.map((set, idx) => (
-                                        <div key={set.id} className="bg-surface border-2 border-surface p-6 flex flex-col md:flex-row items-center gap-8 group hover:border-white/20 transition-colors">
+                                <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+                                    <label className="flex flex-col gap-2">
+                                        <span className="font-mono text-xs uppercase tracking-[0.3em] text-white/40">Event name</span>
+                                        <input
+                                            value={competitionSettings.name}
+                                            onChange={(event) => setCompetitionSettings((current) => ({ ...current, name: event.target.value }))}
+                                            className={inputClass}
+                                        />
+                                    </label>
+                                    <label className="flex flex-col gap-2">
+                                        <span className="font-mono text-xs uppercase tracking-[0.3em] text-white/40">Venue</span>
+                                        <input
+                                            value={competitionSettings.venue}
+                                            onChange={(event) => setCompetitionSettings((current) => ({ ...current, venue: event.target.value }))}
+                                            className={inputClass}
+                                        />
+                                    </label>
+                                    <label className="flex flex-col gap-2">
+                                        <span className="font-mono text-xs uppercase tracking-[0.3em] text-white/40">Date</span>
+                                        <input
+                                            type="date"
+                                            value={competitionSettings.startDate}
+                                            onChange={(event) => setCompetitionSettings((current) => ({ ...current, startDate: event.target.value }))}
+                                            className={inputClass}
+                                        />
+                                    </label>
+                                    <label className="flex flex-col gap-2">
+                                        <span className="font-mono text-xs uppercase tracking-[0.3em] text-white/40">Host country</span>
+                                        <select
+                                            value={competitionSettings.countryCode}
+                                            onChange={(event) => setCompetitionSettings((current) => ({ ...current, countryCode: event.target.value }))}
+                                            className={selectClass}
+                                        >
+                                            {COUNTRY_OPTIONS.map((country) => (
+                                                <option key={country.code} value={country.code}>
+                                                    {country.name}
+                                                </option>
+                                            ))}
+                                        </select>
+                                    </label>
+                                    <label className="flex flex-col gap-2">
+                                        <span className="font-mono text-xs uppercase tracking-[0.3em] text-white/40">Status</span>
+                                        <select
+                                            value={competitionSettings.status}
+                                            onChange={(event) => setCompetitionSettings((current) => ({ ...current, status: event.target.value }))}
+                                            className={selectClass}
+                                        >
+                                            <option value="DRAFT">Draft</option>
+                                            <option value="OPEN">Open</option>
+                                            <option value="LIVE">Live</option>
+                                            <option value="COMPLETED">Completed</option>
+                                        </select>
+                                    </label>
+                                    <label className="flex flex-col gap-2">
+                                        <span className="font-mono text-xs uppercase tracking-[0.3em] text-white/40">Qualifying sets</span>
+                                        <input
+                                            type="number"
+                                            min="1"
+                                            value={competitionSettings.rules.qualifyingSets}
+                                            onChange={(event) => handleCompetitionRuleChange('qualifyingSets', event.target.value)}
+                                            className={inputClass}
+                                        />
+                                    </label>
+                                    <label className="flex flex-col gap-2">
+                                        <span className="font-mono text-xs uppercase tracking-[0.3em] text-white/40">Shots per set</span>
+                                        <input
+                                            type="number"
+                                            min="1"
+                                            value={competitionSettings.rules.shotsPerSet}
+                                            onChange={(event) => handleCompetitionRuleChange('shotsPerSet', event.target.value)}
+                                            className={inputClass}
+                                        />
+                                    </label>
+                                    <label className="flex flex-col gap-2">
+                                        <span className="font-mono text-xs uppercase tracking-[0.3em] text-white/40">Signup link</span>
+                                        <input
+                                            value={competitionSettings.signupLink}
+                                            onChange={(event) => setCompetitionSettings((current) => ({ ...current, signupLink: event.target.value }))}
+                                            className={inputClass}
+                                        />
+                                    </label>
+                                    <label className="flex flex-col gap-2 md:col-span-2">
+                                        <span className="font-mono text-xs uppercase tracking-[0.3em] text-white/40">Payment link</span>
+                                        <input
+                                            value={competitionSettings.paymentLink}
+                                            onChange={(event) => setCompetitionSettings((current) => ({ ...current, paymentLink: event.target.value }))}
+                                            className={inputClass}
+                                        />
+                                    </label>
+                                </div>
 
-                                            <div className="flex flex-col justify-center shrink-0 w-24">
-                                                <span className="font-sans text-xl text-white/40 tracking-widest mb-0 uppercase font-bold">SET</span>
-                                                <span className="text-5xl font-sans font-bold text-white">0{set.id}</span>
-                                            </div>
-
-                                            <div className="flex-1 w-full">
-                                                {set.long > 0 ? (
-                                                    <div className="h-16 flex items-center px-6 bg-primary/10 border-2 border-primary">
-                                                        <Check className="text-primary mr-3" strokeWidth={3} />
-                                                        <span className="text-primary font-sans font-bold uppercase tracking-widest text-2xl drop-shadow-[0_0_5px_rgba(57,255,20,0.5)]">Locked: {set.long}</span>
-                                                    </div>
-                                                ) : (
-                                                    <div className="flex gap-2 w-full h-16">
-                                                        {inputMode === 'summary' ? (
-                                                            <input
-                                                                type="number"
-                                                                placeholder="ENTER LONG..."
-                                                                value={summaryInput}
-                                                                onChange={e => setSummaryInput(e.target.value)}
-                                                                className="w-full bg-background border-2 border-surface px-6 font-sans font-bold text-3xl outline-none focus:border-primary transition-colors text-center uppercase tracking-widest placeholder:text-white/20"
-                                                            />
-                                                        ) : (
-                                                            ballInputs.map((val, i) => (
-                                                                <input
-                                                                    key={i}
-                                                                    type="number"
-                                                                    placeholder={i + 1}
-                                                                    value={ballInputs[i]}
-                                                                    onChange={e => handleBallChange(i, e.target.value)}
-                                                                    className="w-1/6 bg-background border-2 border-surface text-center font-sans font-bold text-3xl outline-none focus:border-primary transition-colors placeholder:text-white/20"
-                                                                />
-                                                            ))
-                                                        )}
-                                                    </div>
-                                                )}
-                                            </div>
-
-                                            <div className="flex items-center gap-6 shrink-0">
-                                                <div className="text-right w-24">
-                                                    <span className="font-sans text-xl font-bold uppercase text-white/40 tracking-widest block">LONG</span>
-                                                    <span className="font-sans text-5xl font-bold text-primary drop-shadow-[0_0_8px_rgba(57,255,20,0.4)]">{set.long || '-'}</span>
-                                                </div>
-
-                                                {set.long === 0 && (
-                                                    <button
-                                                        onClick={() => handleSaveSet(set.id)}
-                                                        className="bg-primary hover:bg-white text-black w-20 h-20 flex justify-center items-center transition-colors shadow-[0_0_20px_rgba(57,255,20,0.3)] hover:shadow-[0_0_30px_rgba(255,255,255,0.6)]"
-                                                    >
-                                                        <ChevronRight size={40} strokeWidth={3} />
-                                                    </button>
-                                                )}
-                                                {set.long > 0 && (
-                                                    <button
-                                                        onClick={() => updateHitterSet(selectedHitterId, set.id, 0)}
-                                                        className="bg-red-500/10 hover:bg-red-500/20 text-red-500 border-2 border-red-500 w-20 h-20 flex justify-center items-center transition-colors"
-                                                    >
-                                                        <X size={32} strokeWidth={3} />
-                                                    </button>
-                                                )}
-                                            </div>
-
+                                <div className="grid grid-cols-1 md:grid-cols-2 gap-4 mt-6">
+                                    {competitionSettings.rules.divisions.map((division, index) => (
+                                        <div key={division.id} className="bg-background border border-white/10 p-4">
+                                            <p className="font-sans text-lg font-bold uppercase text-white">{division.name}</p>
+                                            <label className="flex flex-col gap-2 mt-4">
+                                                <span className="font-mono text-xs uppercase tracking-[0.3em] text-white/40">Bracket size</span>
+                                                <input
+                                                    type="number"
+                                                    min="2"
+                                                    value={division.size}
+                                                    onChange={(event) => handleDivisionSizeChange(index, event.target.value)}
+                                                    className={inputClass}
+                                                />
+                                            </label>
                                         </div>
                                     ))}
                                 </div>
 
-                            </div>
-                        </div>
-                    ) : (
-                        <div className="flex-1 flex items-center justify-center bg-slate-950 border-[3px] border-surface">
-                            <p className="text-primary/50 font-sans text-3xl font-bold uppercase tracking-widest">Select Competitor to Score</p>
-                        </div>
-                    )}
+                                <div className="mt-6 flex gap-4">
+                                    <button
+                                        onClick={() => updateCompetition(activeCompetition.id, competitionSettings)}
+                                        className="bg-primary text-black hover:bg-white px-6 py-4 font-sans font-bold uppercase tracking-wider flex items-center gap-3 transition-colors"
+                                    >
+                                        <Save size={18} strokeWidth={3} /> Save competition
+                                    </button>
+                                </div>
+                            </>
+                        )}
+                    </section>
 
+                    <aside className={`${panelClass} p-6`}>
+                        <div className="flex items-center gap-3 mb-6">
+                            <Plus className="text-primary" />
+                            <h2 className="font-sans text-3xl font-bold uppercase">New competition</h2>
+                        </div>
+
+                        <div className="space-y-4">
+                            <input
+                                placeholder="Competition name"
+                                value={competitionDraft.name}
+                                onChange={(event) => setCompetitionDraft((current) => ({ ...current, name: event.target.value }))}
+                                className={inputClass}
+                            />
+                            <input
+                                placeholder="Venue"
+                                value={competitionDraft.venue}
+                                onChange={(event) => setCompetitionDraft((current) => ({ ...current, venue: event.target.value }))}
+                                className={inputClass}
+                            />
+                            <input
+                                type="date"
+                                value={competitionDraft.startDate}
+                                onChange={(event) => setCompetitionDraft((current) => ({ ...current, startDate: event.target.value }))}
+                                className={inputClass}
+                            />
+                            <select
+                                value={competitionDraft.countryCode}
+                                onChange={(event) => setCompetitionDraft((current) => ({ ...current, countryCode: event.target.value }))}
+                                className={selectClass}
+                            >
+                                {COUNTRY_OPTIONS.map((country) => (
+                                    <option key={country.code} value={country.code}>
+                                        {country.name}
+                                    </option>
+                                ))}
+                            </select>
+                            <button
+                                onClick={handleCreateCompetition}
+                                className="w-full bg-primary text-black hover:bg-white px-6 py-4 font-sans font-bold uppercase tracking-wider flex items-center justify-center gap-3 transition-colors"
+                            >
+                                <Plus size={18} strokeWidth={3} /> Create competition
+                            </button>
+                        </div>
+
+                        <div className="mt-8 border-t border-white/10 pt-6 space-y-3">
+                            {seasonCompetitions.map((competition) => (
+                                <button
+                                    key={competition.id}
+                                    onClick={() => setActiveCompetition(competition.id)}
+                                    className={`w-full text-left border p-4 transition-colors ${
+                                        activeCompetition?.id === competition.id
+                                            ? 'border-primary bg-primary/10'
+                                            : 'border-white/10 bg-background hover:border-white/20'
+                                    }`}
+                                >
+                                    <p className="font-sans text-lg font-bold uppercase text-white">{competition.name}</p>
+                                    <p className="font-mono text-xs uppercase tracking-[0.3em] text-white/40 mt-2">
+                                        {competition.status} • {formatCompetitionDate(competition.startDate)}
+                                    </p>
+                                </button>
+                            ))}
+                        </div>
+                    </aside>
                 </div>
             )}
 
-            {activeTab === 'bracket' && (
-                <div className="flex-1 flex flex-col items-center justify-center bg-slate-950 border-[3px] border-surface mt-4 relative overflow-hidden">
-                    <div className="absolute top-1/2 left-1/2 -translate-x-1/2 -translate-y-1/2 w-[600px] h-[600px] bg-primary/10 blur-[150px] pointer-events-none"></div>
-                    <p className="text-primary font-sans text-4xl font-bold tracking-widest mb-8 uppercase drop-shadow-[0_0_8px_rgba(57,255,20,0.4)] relative z-10">FINALS ADVANCEMENT ENGINE</p>
-                    <button onClick={() => window.location.href = '/bracket'} className="bg-white text-black hover:bg-primary py-4 px-8 font-bold text-2xl font-sans uppercase tracking-wider flex items-center gap-3 transition-colors relative z-10">
-                        <Play size={24} strokeWidth={3} /> Live Seed Bracket
-                    </button>
+            {activeTab === 'signups' && activeCompetition && (
+                <div className="grid grid-cols-1 xl:grid-cols-[minmax(0,1fr)_380px] gap-6">
+                    <section className={`${panelClass} p-6`}>
+                        <div className="grid grid-cols-1 md:grid-cols-3 gap-4 mb-6">
+                            <div className="bg-background border border-white/10 p-4">
+                                <p className="font-mono text-xs uppercase tracking-[0.3em] text-white/40 mb-2">Total signups</p>
+                                <p className="font-sans text-4xl font-bold text-white">{rankedEntrants.length}</p>
+                            </div>
+                            <div className="bg-background border border-white/10 p-4">
+                                <p className="font-mono text-xs uppercase tracking-[0.3em] text-white/40 mb-2">Paid</p>
+                                <p className="font-sans text-4xl font-bold text-primary">{paidEntrants}</p>
+                            </div>
+                            <div className="bg-background border border-white/10 p-4">
+                                <p className="font-mono text-xs uppercase tracking-[0.3em] text-white/40 mb-2">Pending</p>
+                                <p className="font-sans text-4xl font-bold text-red-400">{pendingEntrants}</p>
+                            </div>
+                        </div>
+
+                        <div className="overflow-x-auto">
+                            <table className="w-full min-w-[900px]">
+                                <thead>
+                                    <tr className="border-b border-white/10 text-left">
+                                        <th className="py-4 pr-4 font-mono text-xs uppercase tracking-[0.3em] text-white/40">Player</th>
+                                        <th className="py-4 pr-4 font-mono text-xs uppercase tracking-[0.3em] text-white/40">Pool</th>
+                                        <th className="py-4 pr-4 font-mono text-xs uppercase tracking-[0.3em] text-white/40">Email</th>
+                                        <th className="py-4 pr-4 font-mono text-xs uppercase tracking-[0.3em] text-white/40">Payment</th>
+                                        <th className="py-4 pr-4 font-mono text-xs uppercase tracking-[0.3em] text-white/40">Action</th>
+                                    </tr>
+                                </thead>
+                                <tbody>
+                                    {rankedEntrants.map((entrant) => (
+                                        <tr key={entrant.id} className="border-b border-white/5">
+                                            <td className="py-4 pr-4">
+                                                <p className="font-sans text-lg font-bold uppercase text-white">
+                                                    {entrant.flagEmoji} {entrant.name}
+                                                </p>
+                                                <p className="font-mono text-xs uppercase tracking-[0.3em] text-white/40 mt-2">
+                                                    {entrant.countryName}
+                                                </p>
+                                            </td>
+                                            <td className="py-4 pr-4 font-mono text-sm text-white/60">{entrant.pool}</td>
+                                            <td className="py-4 pr-4 font-mono text-sm text-white/60">{entrant.email}</td>
+                                            <td className="py-4 pr-4">
+                                                <span className={`font-mono text-xs uppercase tracking-[0.3em] ${entrant.paid ? 'text-primary' : 'text-red-400'}`}>
+                                                    {entrant.paid ? 'Paid' : 'Pending'}
+                                                </span>
+                                            </td>
+                                            <td className="py-4 pr-4">
+                                                <button
+                                                    onClick={() => setEntrantPaymentStatus(activeCompetition.id, entrant.id, !entrant.paid)}
+                                                    className={`px-4 py-2 font-sans font-bold uppercase tracking-[0.2em] ${
+                                                        entrant.paid
+                                                            ? 'bg-white/10 text-white hover:bg-white/20'
+                                                            : 'bg-primary text-black hover:bg-white'
+                                                    } transition-colors`}
+                                                >
+                                                    {entrant.paid ? 'Mark unpaid' : 'Mark paid'}
+                                                </button>
+                                            </td>
+                                        </tr>
+                                    ))}
+                                </tbody>
+                            </table>
+                        </div>
+                    </section>
+
+                    <aside className={`${panelClass} p-6`}>
+                        <div className="flex items-center gap-3 mb-6">
+                            <Users className="text-primary" />
+                            <h2 className="font-sans text-3xl font-bold uppercase">New signup</h2>
+                        </div>
+
+                        <div className="space-y-4">
+                            <input
+                                placeholder="Player name"
+                                value={entrantDraft.name}
+                                onChange={(event) => setEntrantDraft((current) => ({ ...current, name: event.target.value }))}
+                                className={inputClass}
+                            />
+                            <input
+                                placeholder="Email"
+                                value={entrantDraft.email}
+                                onChange={(event) => setEntrantDraft((current) => ({ ...current, email: event.target.value }))}
+                                className={inputClass}
+                            />
+                            <select
+                                value={entrantDraft.countryCode}
+                                onChange={(event) => setEntrantDraft((current) => ({ ...current, countryCode: event.target.value }))}
+                                className={selectClass}
+                            >
+                                {COUNTRY_OPTIONS.map((country) => (
+                                    <option key={country.code} value={country.code}>
+                                        {country.name}
+                                    </option>
+                                ))}
+                            </select>
+                            <select
+                                value={entrantDraft.pool}
+                                onChange={(event) => setEntrantDraft((current) => ({ ...current, pool: event.target.value }))}
+                                className={selectClass}
+                            >
+                                <option value="A">Pool A</option>
+                                <option value="B">Pool B</option>
+                                <option value="C">Pool C</option>
+                            </select>
+                            <label className="flex items-center gap-3 font-mono text-xs uppercase tracking-[0.3em] text-white/50">
+                                <input
+                                    type="checkbox"
+                                    checked={entrantDraft.paid}
+                                    onChange={(event) => setEntrantDraft((current) => ({ ...current, paid: event.target.checked }))}
+                                />
+                                Paid already
+                            </label>
+                            <textarea
+                                placeholder="Notes"
+                                value={entrantDraft.notes}
+                                onChange={(event) => setEntrantDraft((current) => ({ ...current, notes: event.target.value }))}
+                                className={textareaClass}
+                            />
+                            <a
+                                href={activeCompetition.paymentLink}
+                                target="_blank"
+                                rel="noreferrer"
+                                className="flex items-center gap-3 font-mono text-xs uppercase tracking-[0.3em] text-primary"
+                            >
+                                <CreditCard size={14} /> Open payment link
+                            </a>
+                            <button
+                                onClick={handleAddEntrant}
+                                className="w-full bg-primary text-black hover:bg-white px-6 py-4 font-sans font-bold uppercase tracking-wider flex items-center justify-center gap-3 transition-colors"
+                            >
+                                <Plus size={18} strokeWidth={3} /> Add entrant
+                            </button>
+                        </div>
+                    </aside>
+                </div>
+            )}
+
+            {activeTab === 'scoring' && activeCompetition && (
+                <div className="grid grid-cols-1 xl:grid-cols-[340px_minmax(0,1fr)] gap-6">
+                    <aside className={`${panelClass} p-4`}>
+                        <div className="space-y-3">
+                            {rankedEntrants.map((entrant) => (
+                                <button
+                                    key={entrant.id}
+                                    onClick={() => setSelectedEntrantId(entrant.id)}
+                                    className={`w-full text-left border p-4 transition-colors ${
+                                        selectedEntrantId === entrant.id
+                                            ? 'border-primary bg-primary/10'
+                                            : 'border-white/10 bg-background hover:border-white/20'
+                                    }`}
+                                >
+                                    <p className="font-sans text-lg font-bold uppercase text-white">
+                                        #{entrant.rank} {entrant.flagEmoji} {entrant.name}
+                                    </p>
+                                    <p className="font-mono text-xs uppercase tracking-[0.3em] text-white/40 mt-2">
+                                        {entrant.bestDistance || '-'} long • {divisionLookup[entrant.id] || 'Qualifier only'}
+                                    </p>
+                                </button>
+                            ))}
+                        </div>
+                    </aside>
+
+                    <section className={`${panelClass} p-6`}>
+                        {selectedEntrant ? (
+                            <>
+                                <div className="flex flex-col lg:flex-row lg:items-end lg:justify-between gap-6 mb-8">
+                                    <div>
+                                        <p className="font-mono text-xs uppercase tracking-[0.3em] text-primary mb-3">Shot entry</p>
+                                        <h2 className="font-sans text-5xl font-bold uppercase text-white">
+                                            {selectedEntrant.flagEmoji} {selectedEntrant.name}
+                                        </h2>
+                                        <p className="font-mono text-sm uppercase tracking-[0.3em] text-white/40 mt-3">
+                                            {divisionLookup[selectedEntrant.id] || 'Qualifier only'} • Pool {selectedEntrant.pool}
+                                        </p>
+                                    </div>
+                                    <div className="grid grid-cols-2 gap-4">
+                                        <div className="bg-background border border-white/10 p-4">
+                                            <p className="font-mono text-xs uppercase tracking-[0.3em] text-white/40 mb-2">Best drive</p>
+                                            <p className="font-sans text-4xl font-bold text-primary">{selectedEntrant.bestDistance || '-'}</p>
+                                        </div>
+                                        <div className="bg-background border border-white/10 p-4">
+                                            <p className="font-mono text-xs uppercase tracking-[0.3em] text-white/40 mb-2">Payment</p>
+                                            <p className={`font-sans text-2xl font-bold uppercase ${selectedEntrant.paid ? 'text-primary' : 'text-red-400'}`}>
+                                                {selectedEntrant.paid ? 'Paid' : 'Pending'}
+                                            </p>
+                                        </div>
+                                    </div>
+                                </div>
+
+                                <div className="space-y-4">
+                                    {selectedEntrant.sets.map((setItem) => {
+                                        const setLong = Math.max(0, ...setItem.shots)
+
+                                        return (
+                                            <div key={setItem.id} className="bg-background border border-white/10 p-5">
+                                                <div className="flex items-center justify-between mb-4">
+                                                    <p className="font-sans text-2xl font-bold uppercase text-white">Set 0{setItem.id}</p>
+                                                    <p className="font-mono text-sm uppercase tracking-[0.3em] text-primary">Long {setLong || '-'}</p>
+                                                </div>
+                                                <div className="grid grid-cols-2 md:grid-cols-3 xl:grid-cols-6 gap-3">
+                                                    {setItem.shots.map((shot, index) => (
+                                                        <label key={index} className="flex flex-col gap-2">
+                                                            <span className="font-mono text-xs uppercase tracking-[0.3em] text-white/40">Shot {index + 1}</span>
+                                                            <input
+                                                                type="number"
+                                                                min="0"
+                                                                value={shot}
+                                                                onChange={(event) => updateEntrantShot(activeCompetition.id, selectedEntrant.id, setItem.id, index, event.target.value)}
+                                                                className={inputClass}
+                                                            />
+                                                        </label>
+                                                    ))}
+                                                </div>
+                                            </div>
+                                        )
+                                    })}
+                                </div>
+                            </>
+                        ) : (
+                            <div className="flex items-center justify-center h-full">
+                                <p className="font-sans text-3xl font-bold uppercase tracking-[0.2em] text-white/30">Select an entrant to score.</p>
+                            </div>
+                        )}
+                    </section>
+                </div>
+            )}
+
+            {activeTab === 'brackets' && activeCompetition && (
+                <div className="grid grid-cols-1 xl:grid-cols-2 gap-6">
+                    {divisions.map((division) => (
+                        <section key={division.id} className={`${panelClass} p-6`}>
+                            <div className="flex items-end justify-between mb-6">
+                                <div>
+                                    <p className="font-mono text-xs uppercase tracking-[0.3em] text-primary mb-3">Division bracket</p>
+                                    <h2 className="font-sans text-3xl font-bold uppercase text-white">{division.name}</h2>
+                                </div>
+                                <div className="text-right">
+                                    <p className="font-mono text-xs uppercase tracking-[0.3em] text-white/40 mb-2">Champion</p>
+                                    <p className="font-sans text-xl font-bold uppercase text-primary">
+                                        {division.rounds[division.rounds.length - 1]?.[0]?.winner
+                                            ? `${division.rounds[division.rounds.length - 1][0].winner.flagEmoji} ${division.rounds[division.rounds.length - 1][0].winner.name}`
+                                            : 'TBD'}
+                                    </p>
+                                </div>
+                            </div>
+
+                            <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
+                                {division.rounds.map((round, roundIndex) => (
+                                    <div key={roundIndex} className="space-y-4">
+                                        <p className="font-mono text-xs uppercase tracking-[0.3em] text-primary">Round {roundIndex + 1}</p>
+                                        {round.map((match) => (
+                                            <div key={match.id} className="bg-background border border-white/10 p-4 space-y-2">
+                                                {match.entrants.map((entrant, entrantIndex) => (
+                                                    <button
+                                                        key={`${match.id}-${entrantIndex}`}
+                                                        disabled={!entrant}
+                                                        onClick={() => entrant && setBracketWinner(activeCompetition.id, division.id, match.roundIndex, match.matchIndex, entrant.id)}
+                                                        className={`w-full flex items-center justify-between px-3 py-3 text-left transition-colors ${
+                                                            match.winner?.id === entrant?.id
+                                                                ? 'bg-primary text-black'
+                                                                : 'bg-slate-950 text-white hover:bg-white/5'
+                                                        } ${!entrant ? 'cursor-not-allowed text-white/25' : ''}`}
+                                                    >
+                                                        <span className="font-sans text-sm font-bold uppercase">
+                                                            {entrant ? `${entrant.seed}. ${entrant.flagEmoji} ${entrant.name}` : 'BYE'}
+                                                        </span>
+                                                        <span className="font-mono text-xs">{entrant?.bestDistance || '-'}</span>
+                                                    </button>
+                                                ))}
+                                            </div>
+                                        ))}
+                                    </div>
+                                ))}
+                            </div>
+                        </section>
+                    ))}
+                </div>
+            )}
+
+            {activeTab === 'media' && activeCompetition && (
+                <div className="grid grid-cols-1 xl:grid-cols-2 gap-6">
+                    {mediaPosts.map((post) => (
+                        <section key={post.id} className={`${panelClass} p-6`}>
+                            <div className="flex items-center justify-between mb-6">
+                                <div>
+                                    <p className="font-mono text-xs uppercase tracking-[0.3em] text-primary mb-3">Winner content</p>
+                                    <h2 className="font-sans text-3xl font-bold uppercase text-white">
+                                        {post.flagEmoji} {post.championName}
+                                    </h2>
+                                    <p className="font-mono text-xs uppercase tracking-[0.3em] text-white/40 mt-3">
+                                        {post.divisionName}
+                                    </p>
+                                </div>
+                                <button
+                                    onClick={() => handleCopyCaption(post)}
+                                    className="bg-primary text-black hover:bg-white px-4 py-3 font-sans font-bold uppercase tracking-[0.2em] flex items-center gap-2 transition-colors"
+                                >
+                                    <Copy size={16} strokeWidth={3} /> {copiedPostId === post.id ? 'Copied' : 'Copy'}
+                                </button>
+                            </div>
+
+                            <div className="space-y-4">
+                                <div className="bg-background border border-white/10 p-4">
+                                    <p className="font-mono text-xs uppercase tracking-[0.3em] text-white/40 mb-2">Asset to render</p>
+                                    <p className="font-sans text-xl font-bold uppercase text-white">{post.assetName}</p>
+                                    <p className="font-mono text-xs uppercase tracking-[0.3em] text-primary mt-2">
+                                        Use the premade winner-card template and insert the champion flag and division mark.
+                                    </p>
+                                </div>
+                                <textarea value={post.caption} readOnly className={textareaClass} />
+                                <textarea value={post.storyCaption} readOnly className={textareaClass} />
+                            </div>
+                        </section>
+                    ))}
+                    {mediaPosts.length === 0 && (
+                        <div className={`${panelClass} p-8 xl:col-span-2 text-center`}>
+                            <Flag className="mx-auto text-primary mb-4" size={32} />
+                            <p className="font-sans text-3xl font-bold uppercase text-white/60">
+                                Finish the brackets to generate winner captions and asset briefs.
+                            </p>
+                        </div>
+                    )}
                 </div>
             )}
         </div>

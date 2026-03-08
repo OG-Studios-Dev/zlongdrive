@@ -1,4 +1,5 @@
 import React from 'react'
+import { Link } from 'react-router-dom'
 
 const formats = [
     {
@@ -36,9 +37,9 @@ export default function EventFormats() {
                         <h2 className="text-4xl font-bold mb-4">Configurable Formats.</h2>
                         <p className="text-text/60 text-lg font-light">Built directly around real Z Long Drive operational templates. Select your field size, group count, and cut logic with zero coding.</p>
                     </div>
-                    <a href="/admin" className="magnetic-btn bg-white/5 border border-white/10 hover:bg-white/10 px-6 py-3 rounded-full font-bold text-sm">
+                    <Link to="/admin" className="magnetic-btn bg-white/5 border border-white/10 hover:bg-white/10 px-6 py-3 rounded-full font-bold text-sm">
                         Configure Event Setup
-                    </a>
+                    </Link>
                 </div>
 
                 <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-6">
